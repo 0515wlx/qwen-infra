@@ -175,7 +175,7 @@ python benchmarks/benchmark.py
 | 200k context prefill | OOM/slow | 不支持 | <60s |
 | KV cache 跨会话恢复 | 不支持 | 不支持 | <2s (hot) / <10s (cold) |
 
-测试环境：2× RTX 4090 48GB (或 A6000)，Qwen3.5-35B-A3B-GPTQ-Int4
+测试环境：2× RTX 4090 24GB 或 2× V100 16GB，Qwen3.5-35B-A3B-GPTQ-Int4
 
 ## Roadmap
 
