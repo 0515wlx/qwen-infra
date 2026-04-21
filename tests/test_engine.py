@@ -25,9 +25,9 @@ def configure_test_environment() -> None:
     if 'CUDA_VISIBLE_DEVICES' not in os.environ:
         if torch.cuda.is_available():
             detected = [str(i) for i in range(min(torch.cuda.device_count(), 2))]
-            os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(detected) if detected else '0'
+            os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(detected)
         else:
-            os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+            os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
     if 'TENSOR_PARALLEL_SIZE' not in os.environ:
         visible_devices = [
