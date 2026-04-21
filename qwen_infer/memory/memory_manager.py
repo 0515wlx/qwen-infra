@@ -158,7 +158,7 @@ class GPUMemoryManager:
                     return False
 
                 # Allocate
-                num_elements = size_bytes * 8 // torch.finfo(dtype).bits // 2  # Convert to elements
+                num_elements = size_bytes * 8 // torch.finfo(dtype).bits  # Convert to elements
                 pool = torch.empty(
                     (num_elements,),
                     dtype=dtype,
