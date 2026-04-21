@@ -17,11 +17,11 @@ Qwen3.5-35B-A3B-GPTQ-Int4 是 MoE（Mixture of Experts）架构：
 - 总参数 35B，每次推理仅激活 ~3B（A3B = Active 3B）
 - Expert 路由决定哪些参数被激活，导致显存访问模式高度不规则
 - **transformers 库不支持 Qwen3.5 MoE 架构，官方无 Python 脚本，需自研实现**
-- vLLM 在 4 卡 V100 上存在 bug：GPU 利用率仅 100-130W（远低于 300W TDP），推理速度慢
+- vLLM 在 4 卡 V100 SXM2（300W TDP）上存在 bug：GPU 利用率仅 100-130W（远低于该 SKU 的 300W TDP），推理速度慢
 - 本引擎的核心优势：
   - 感知 expert 激活模式，做针对性的显存预取和计算调度
-  - 优化 GPU 功耗利用，目标跑满 300W TDP
-  - NVLink 拓扑感知调度（当前 8×V100 双 NVLink 组，每组 4 卡）
+  - 优化 GPU 功耗利用，目标跑满 V100 SXM2 的 300W TDP
+  - NVLink 拓扑感知调度（当前为 8×V100 SXM2，双 NVLink 组，每组 4 卡）
 
 ## Code Conventions
 
