@@ -15,8 +15,30 @@ import logging
 import time
 from typing import List
 
-# Force GPUs 2 and 3
-os.environ['CUDA_VISIBLE_DEVICES'] = '2,3'
+# Allow `python tests/test_engine.py` to import the local package without installation.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+def configure_test_environment() -> None:
+    """Use explicit environment settings when provided, otherwise derive sane defaults."""
+    if 'CUDA_VISIBLE_DEVICES' not in os.environ:
+        if torch.cuda.is_available():
+            detected = [str(i) for i in range(min(torch.cuda.device_count(), 2))]
+            os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(detected)
+        else:
+            os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+    if 'TENSOR_PARALLEL_SIZE' not in os.environ:
+        visible_devices = [
+            gpu_id.strip()
+            for gpu_id in os.environ['CUDA_VISIBLE_DEVICES'].split(',')
+            if gpu_id.strip()
+        ]
+        os.environ['TENSOR_PARALLEL_SIZE'] = str(len(visible_devices) or 1)
+
+
+configure_test_environment()
 
 from qwen_infer import InferenceEngine, Config
 from qwen_infer.utils.memory_utils import get_gpu_memory_info, log_memory_usage
@@ -64,11 +86,11 @@ def test_memory_management():
     logger.info("Test 2: Memory Management")
     logger.info("=" * 60)
 
+    config = Config()
     # Log initial state
     logger.info("Initial GPU memory state:")
-    log_memory_usage([0, 1], "Before: ")  # These are remapped to 2,3
+    log_memory_usage(config.gpu_indices, "Before: ")
 
-    config = Config()
     engine = InferenceEngine(config)
 
     try:
@@ -85,7 +107,7 @@ def test_memory_management():
         else:
             logger.warning("✗ Safety margin violated")
 
-        log_memory_usage([0, 1], "After init: ")
+        log_memory_usage(config.gpu_indices, "After init: ")
         engine.__exit__(None, None, None)
         return True
 
@@ -220,6 +242,44 @@ def test_multi_gpu_distribution():
         logger.error("✗ CUDA not available")
         return False
 
+def test_gpu_distribution_current():
+    """Test current GPU distribution"""
+    logger.info("=" * 60)
+    logger.info("Test 5: GPU Distribution")
+    logger.info("=" * 60)
+
+    config = Config()
+    logger.info(f"Tensor parallel size: {config.tensor_parallel_size}")
+    logger.info(f"GPU indices: {config.gpu_indices}")
+
+    expected_gpus = len(config.gpu_indices)
+    if config.tensor_parallel_size != expected_gpus:
+        logger.error("Tensor parallel size does not match configured GPU count")
+        return False
+
+    if not torch.cuda.is_available():
+        logger.error("CUDA not available")
+        return False
+
+    num_devices = torch.cuda.device_count()
+    logger.info(f"CUDA sees {num_devices} device(s)")
+
+    if num_devices < expected_gpus:
+        logger.error("Configured more GPUs than CUDA can access")
+        return False
+
+    for i in range(num_devices):
+        name = torch.cuda.get_device_name(i)
+        total = torch.cuda.get_device_properties(i).total_memory / (1024**3)
+        logger.info(f"  GPU {i}: {name} ({total:.2f}GB)")
+
+    if expected_gpus < 2:
+        logger.warning("Only one GPU configured; skipping strict multi-GPU assertion")
+        return True
+
+    logger.info("Multi-GPU configuration verified")
+    return True
+
 def test_gptq_model_loading():
     """Test GPTQ model loading"""
     logger.info("=" * 60)
@@ -264,7 +324,7 @@ def run_all_tests():
     """Run all tests"""
     logger.info("\n" + "=" * 60)
     logger.info("Qwen Inference Engine Test Suite")
-    logger.info("GPUs: 2,3")
+    logger.info(f"GPUs: {os.environ.get('CUDA_VISIBLE_DEVICES', '(not set)')}")
     logger.info("Model: Qwen3.5-35B-A3B-GPTQ-Int4")
     logger.info("=" * 60 + "\n")
 
@@ -273,7 +333,7 @@ def run_all_tests():
         ("Memory Management", test_memory_management),
         ("Paged Attention", test_paged_attention),
         ("Long Sequence Support", test_long_sequence),
-        ("Multi-GPU Distribution", test_multi_gpu_distribution),
+        ("GPU Distribution", test_gpu_distribution_current),
         ("GPTQ Model Loading", test_gptq_model_loading),
     ]
 

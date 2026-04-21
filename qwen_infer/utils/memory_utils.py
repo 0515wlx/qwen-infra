@@ -16,7 +16,13 @@ def setup_logging(level: str = "INFO") -> None:
 def get_gpu_memory_info(gpu_id: int) -> dict:
     """Get GPU memory information"""
     if not torch.cuda.is_available():
-        return {'total': 0, 'allocated': 0, 'free': 0}
+        return {
+            'total': 0,
+            'allocated': 0,
+            'reserved': 0,
+            'free': 0,
+            'gpu_id': gpu_id
+        }
 
     torch.cuda.set_device(gpu_id)
     total = torch.cuda.get_device_properties(gpu_id).total_memory / (1024**3)  # GB

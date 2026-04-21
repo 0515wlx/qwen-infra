@@ -16,12 +16,16 @@
 Qwen3.5-35B-A3B-GPTQ-Int4 是 MoE（Mixture of Experts）架构：
 - 总参数 35B，每次推理仅激活 ~3B（A3B = Active 3B）
 - Expert 路由决定哪些参数被激活，导致显存访问模式高度不规则
-- vLLM/llama.cpp 的通用调度无法利用这种稀疏性 → GPU 利用率低
-- 本引擎的核心优势：感知 expert 激活模式，做针对性的显存预取和计算调度
+- **transformers 库不支持 Qwen3.5 MoE 架构，官方无 Python 脚本，需自研实现**
+- vLLM 在 4 卡 V100 SXM2（300W TDP）上存在 bug：GPU 利用率仅 100-130W（远低于该 SKU 的 300W TDP），推理速度慢
+- 本引擎的核心优势：
+  - 感知 expert 激活模式，做针对性的显存预取和计算调度
+  - 优化 GPU 功耗利用，目标跑满 V100 SXM2 的 300W TDP
+  - NVLink 拓扑感知调度（当前为 8×V100 SXM2，双 NVLink 组，每组 4 卡）
 
 ## Code Conventions
 
-- Python 3.10+，类型标注必须
+- Python 3.12+，类型标注必须
 - 异步用 asyncio（API 层），推理核心用同步 + torch.cuda.stream
 - 依赖管理：requirements.txt（当前），后续迁移 pyproject.toml
 - 日志统一用 logging module，不用 print
@@ -109,10 +113,21 @@ MAX_SEQUENCE_LENGTH=250000
 
 ### Multi-GPU Strategy
 
-- 默认 GPUs 2,3（0,1 测试环境可能被占用）
-- 每 GPU 独立 KV cache pool
-- Column parallel: QKV projections
-- Row parallel: output projections
+当前硬件配置：8× V100 16GB，双 NVLink 组（每组 4 卡）
+- NVLink Group 0: GPUs 0,1,2,3（组内 NVLink 互联）
+- NVLink Group 1: GPUs 4,5,6,7（组内 NVLink 互联）
+- 组间通过 PCIe 通信（带宽较低）
+
+调度策略：
+- 优先在同一 NVLink 组内做张量并行（利用高带宽 300GB/s）
+- 跨组通信最小化（PCIe 仅 ~16GB/s）
+- Expert 路由感知：将频繁协作的 expert 放在同一 NVLink 组
+- 默认测试用 GPUs 2,3（同组），生产环境可扩展到 4 卡或 8 卡
+
+未来架构支持：
+- Ampere (A100): NVLink 3.0 (600GB/s)，NVSwitch 全连接
+- Hopper (H100): NVLink 4.0 (900GB/s)，Transformer Engine 支持
+- 需要针对不同架构的 NVLink 拓扑做自适应调度
 
 ### Persistent KV Cache Design (TODO)
 
@@ -170,12 +185,19 @@ python benchmarks/benchmark.py
 |--------|--------------|-------------------|-----------|
 | Throughput (tok/s, batch=1) | ~40 | ~30 | >60 |
 | Throughput (tok/s, batch=8) | ~200 | N/A | >350 |
-| GPU utilization | ~50-60% | ~40-50% | >80% |
+| GPU utilization (power) | 100-130W | ~150W | >240W (接近 250W TDP) |
+| GPU utilization (compute) | ~50-60% | ~40-50% | >80% |
 | TTFT (Time to First Token, 4k prompt) | ~800ms | ~1200ms | <500ms |
 | 200k context prefill | OOM/slow | 不支持 | <60s |
 | KV cache 跨会话恢复 | 不支持 | 不支持 | <2s (hot) / <10s (cold) |
+| NVLink 带宽利用率 | <30% | N/A | >70% |
 
-测试环境：2× RTX 4090 48GB (或 A6000)，Qwen3.5-35B-A3B-GPTQ-Int4
+测试环境：8× V100 16GB (双 NVLink 组)，Qwen3.5-35B-A3B-GPTQ-Int4
+
+vLLM 已知问题：
+- 4 卡 V100 上 GPU 功耗仅 100-130W（正常应接近 250W TDP）
+- MoE expert 调度未优化，导致 GPU 大量空闲等待
+- 跨 NVLink 组通信未优化，PCIe 成为瓶颈
 
 ## Roadmap
 
