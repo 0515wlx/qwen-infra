@@ -70,7 +70,6 @@ class BlockAllocator:
         # Track block allocation
         self.free_blocks = set(range(num_blocks))
         self.block_ref_count: Dict[int, int] = {i: 0 for i in range(num_blocks)}
-        self.block_lock = torch.cuda.Semaphore() if torch.cuda.is_available() else None
 
         # Statistics
         self.num_allocated = 0

@@ -164,7 +164,7 @@ class KVCacheManager:
         Returns:
             bool: True if extension successful
         """
-        if seq_id not in seq_blocks:
+        if seq_id not in self.seq_blocks:
             return False
 
         current_length = self.seq_lengths[seq_id]
